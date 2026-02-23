@@ -123,8 +123,9 @@ if df is not None and not df.empty:
         sequence = np.repeat(scaled_input[:, np.newaxis, :], 10, axis=1)
         theft_prob = model.predict(sequence)[0][0]
 
-        if theft_prob > 0.5:
-            st.error(f"🚨 ALERT: Theft Detected ({theft_prob:.1%})")
+        # New code (Make it less sensitive):
+        if theft_prob > 0.85: # Increased threshold to reduce false alarms
+            st.error("🚨 ALERT: Theft Detected")
         elif iso_status == -1:
             st.warning("⚠️ Unknown Signature (Anomalous Device)")
         else:
@@ -137,4 +138,5 @@ if df is not None and not df.empty:
 # Auto-Refresh Logic
 time.sleep(refresh_rate)
 st.rerun()
+
 

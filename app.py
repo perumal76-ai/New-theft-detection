@@ -10,6 +10,10 @@ from datetime import datetime, timedelta
 # 1. Page & Security Configuration
 st.set_page_config(page_title="Pro-Smart Grid Monitor", layout="wide")
 
+# Initialize Session State for Temporal Buffering (Prevents False Alarms)
+if "theft_counter" not in st.session_state:
+    st.session_state.theft_counter = 0
+
 # Custom CSS for Professional UI
 st.markdown("""
     <style>
@@ -19,13 +23,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-
-# CORRECT WAY: Use the Variable Names, not the values
+# Pull Keys Securely
 try:
     CHANNEL_ID = st.secrets["TS_CHANNEL_ID"]
     READ_API_KEY = st.secrets["TS_READ_API_KEY"]
 except:
-    st.error("Missing Secrets: Ensure TS_CHANNEL_ID and TS_READ_API_KEY are in Streamlit Cloud Settings.")
+    st.error("Missing Secrets: Ensure TS_CHANNEL_ID and TS_READ_API_KEY are in Streamlit Secrets.")
     st.stop()
 
 # 2. Load Unified AI Assets
@@ -45,7 +48,6 @@ def fetch_live_data(results=60):
         response = requests.get(url, timeout=5).json()
         df = pd.DataFrame(response['feeds'])
         
-        # Professional Mapping
         rename_map = {
             'field1': 'Voltage', 'field2': 'Current', 'field3': 'Power',
             'field4': 'Energy', 'field5': 'Frequency', 'field6': 'Power_Factor'
@@ -62,19 +64,18 @@ def fetch_live_data(results=60):
 # --- Dashboard Layout ---
 st.title("🛡️ Advanced Smart Meter Security Dashboard")
 
-# Sidebar Controls
 with st.sidebar:
     st.header("⚙️ Control Panel")
     refresh_rate = st.slider("Refresh Interval (sec)", 16, 60, 16)
     
     if st.button("🗑️ Clear Local History"):
         st.cache_data.clear()
+        st.session_state.theft_counter = 0
         st.success("Cache Cleared")
     
     st.divider()
     st.info(f"Monitoring Channel: {CHANNEL_ID}")
 
-# Fetch Current State
 df = fetch_live_data()
 
 if df is not None and not df.empty:
@@ -87,7 +88,7 @@ if df is not None and not df.empty:
     status_text = "🟢 ESP32: ONLINE" if is_online else "🔴 ESP32: OFFLINE"
     st.subheader(status_text)
 
-    # 5. Live Parameters (All Parameters)
+    # 5. Live Parameters Grid
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Voltage", f"{latest['Voltage']:.1f}V")
     m2.metric("Current", f"{latest['Current']:.3f}A")
@@ -123,9 +124,18 @@ if df is not None and not df.empty:
         sequence = np.repeat(scaled_input[:, np.newaxis, :], 10, axis=1)
         theft_prob = model.predict(sequence)[0][0]
 
-        # New code (Make it less sensitive):
-        if theft_prob > 0.85: # Increased threshold to reduce false alarms
-            st.error("🚨 ALERT: Theft Detected")
+        # --- UPDATED DETECTION LOGIC (Temporal Buffering) ---
+        # High threshold (0.85) + requiring 3 consecutive alerts to confirm
+        if theft_prob > 0.85:
+            st.session_state.theft_counter += 1
+        else:
+            st.session_state.theft_counter = 0
+
+        if st.session_state.theft_counter >= 3:
+            st.error(f"🚨 CONFIRMED THEFT DETECTED ({theft_prob:.1%})")
+            st.warning("Constant anomalous load pattern identified.")
+        elif theft_prob > 0.85:
+            st.info("🟡 Analyzing suspicious pattern...")
         elif iso_status == -1:
             st.warning("⚠️ Unknown Signature (Anomalous Device)")
         else:
@@ -135,8 +145,6 @@ if df is not None and not df.empty:
         st.subheader("📈 Real-Time Power Load")
         st.line_chart(df.set_index('Time')['Power'])
 
-# Auto-Refresh Logic
+# Auto-Refresh Logic (16s to avoid ThingSpeak rate limits)
 time.sleep(refresh_rate)
 st.rerun()
-
-

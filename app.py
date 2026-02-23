@@ -19,12 +19,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Pull Keys from Streamlit Secrets
+
+# CORRECT WAY: Use the Variable Names, not the values
 try:
-    CHANNEL_ID = st.secrets["3256606"]
-    READ_API_KEY = st.secrets["YC5N2SQUWR1IYIR0"]
+    CHANNEL_ID = st.secrets["TS_CHANNEL_ID"]
+    READ_API_KEY = st.secrets["TS_READ_API_KEY"]
 except:
-    st.error("Missing Secrets: TS_CHANNEL_ID or TS_READ_API_KEY")
+    st.error("Missing Secrets: Ensure TS_CHANNEL_ID and TS_READ_API_KEY are in Streamlit Cloud Settings.")
     st.stop()
 
 # 2. Load Unified AI Assets
@@ -136,3 +137,4 @@ if df is not None and not df.empty:
 # Auto-Refresh Logic
 time.sleep(refresh_rate)
 st.rerun()
+

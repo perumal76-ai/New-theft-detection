@@ -110,7 +110,7 @@ if df is not None and not df.empty:
     col_ai, col_graph = st.columns([1, 2])
 
     with col_ai:
-        st.subheader("🕵️ AI Device Intelligence")
+        st.subheader("🕵️ Perumal AI Device Intelligence")
         
         # Prepare data for AI model
         raw_input = latest[['Voltage', 'Current', 'Power', 'Energy', 'Frequency', 'Power_Factor']].values.reshape(1, -1)
@@ -155,3 +155,4 @@ if df is not None and not df.empty:
 # Auto-Refresh Logic
 time.sleep(refresh_rate)
 st.rerun()
+

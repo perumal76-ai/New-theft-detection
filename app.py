@@ -6,6 +6,7 @@ import joblib
 import requests
 import time
 from datetime import datetime, timedelta
+import plotly.graph_objects as go  # Added for Waveform visualization
 
 # 1. Page Configuration
 st.set_page_config(page_title="Advanced Smart Grid Monitor", layout="wide")
@@ -112,21 +113,17 @@ if df is not None and not df.empty:
         pf = latest['Power_Factor']
         i = latest['Current']
         
-        # --- NEW MULTI-METRIC DEVICE RECOGNITION LOGIC ---
-        # Derived from feeds_final.csv statistical patterns
+        # Device Recognition Logic
         if i < 0.05:
             active_device = "Standby Mode"
-        # Purely Resistive Loads (Like your 40W Light)
         elif pf > 0.95:
             if 30 <= p < 45: active_device = "40W Light"
             elif 45 <= p < 65: active_device = "Light + Phone"
             else: active_device = "High Resistive Load"
-        # Electronic Switching Loads (Laptop / Phone)
         elif pf < 0.70:
             if p < 25: active_device = "Mobile Phone Charging"
             elif 25 <= p < 60: active_device = "Laptop"
             else: active_device = "Multiple Electronic Devices"
-        # Mixed Loads (Light + Electronics)
         elif 0.70 <= pf <= 0.95:
             if 70 <= p < 110: active_device = "Light + Laptop"
             elif p >= 110: active_device = "Light + Phone + Laptop"
@@ -144,13 +141,12 @@ if df is not None and not df.empty:
         sequence = np.repeat(scaled_input[:, np.newaxis, :], 10, axis=1) 
         theft_prob = model.predict(sequence, verbose=0)[0][0]
 
-        # 8. Optimized Detection Logic (Temporal Buffering)
+        # 8. Detection Logic
         if theft_prob > 0.85:
             st.session_state.theft_counter += 1
         else:
             st.session_state.theft_counter = 0
 
-        # Output Results
         if st.session_state.theft_counter >= 3:
             st.error(f"🚨 CONFIRMED THEFT DETECTED ({theft_prob:.1%})")
             st.warning("Continuous anomalous load signature confirmed.")
@@ -162,8 +158,34 @@ if df is not None and not df.empty:
             st.success("✅ System Secure: Signature Verified")
 
     with col_graph:
-        st.subheader("📈 Real-Time Power Consumption")
-        st.line_chart(df.set_index('Time')['Power'])
+        st.subheader("🌊 AC Current Waveform (Live Trend)")
+        
+        # Create a professional Waveform using Plotly
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df['Time'], 
+            y=df['Current'],
+            mode='lines+markers',
+            name='Current (A)',
+            line=dict(shape='spline', color='#10b981', width=3),
+            fill='tozeroy', 
+            fillcolor='rgba(16, 185, 129, 0.2)'
+        ))
+
+        fig.update_layout(
+            margin=dict(l=0, r=0, t=20, b=0),
+            height=300,
+            xaxis_title="Time",
+            yaxis_title="Amperes (A)",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Secondary Power Graph
+    st.divider()
+    st.subheader("📈 Real-Time Power Consumption (Watts)")
+    st.line_chart(df.set_index('Time')['Power'])
 
 # Auto-Refresh Logic
 time.sleep(refresh_rate)

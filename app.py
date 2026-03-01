@@ -6,7 +6,7 @@ import joblib
 import requests
 import time
 from datetime import datetime, timedelta
-import plotly.graph_objects as go  # Added for Waveform visualization
+import plotly.graph_objects as go # Required for Sine Wave
 
 # 1. Page Configuration
 st.set_page_config(page_title="Advanced Smart Grid Monitor", layout="wide")
@@ -108,32 +108,27 @@ if df is not None and not df.empty:
     with col_ai:
         st.subheader("🕵️ Perumal AI Intelligence")
         
-        # Pull latest metrics
+        # Pull metrics
         p = latest['Power']
         pf = latest['Power_Factor']
         i = latest['Current']
+        f = latest['Frequency']
         
-        # Device Recognition Logic
+        # Multi-Metric Recognition logic
         if i < 0.05:
             active_device = "Standby Mode"
         elif pf > 0.95:
-            if 30 <= p < 45: active_device = "40W Light"
-            elif 45 <= p < 65: active_device = "Light + Phone"
-            else: active_device = "High Resistive Load"
+            active_device = "40W Light" if 30 <= p < 45 else "High Resistive Load"
         elif pf < 0.70:
-            if p < 25: active_device = "Mobile Phone Charging"
-            elif 25 <= p < 60: active_device = "Laptop"
-            else: active_device = "Multiple Electronic Devices"
+            active_device = "Laptop" if 25 <= p < 60 else "Mobile Phone Charging"
         elif 0.70 <= pf <= 0.95:
-            if 70 <= p < 110: active_device = "Light + Laptop"
-            elif p >= 110: active_device = "Light + Phone + Laptop"
-            else: active_device = "Mixed Pattern Detected"
+            active_device = "Mixed (Light/Laptop/Phone)"
         else:
             active_device = "Unidentified Combination"
         
         st.write(f"**Identified Device:** {active_device}")
 
-        # AI Prediction Execution
+        # AI Prediction
         raw_input = latest[['Voltage', 'Current', 'Power', 'Energy', 'Frequency', 'Power_Factor']].values.reshape(1, -1)
         scaled_input = scaler.transform(raw_input)
         
@@ -141,7 +136,7 @@ if df is not None and not df.empty:
         sequence = np.repeat(scaled_input[:, np.newaxis, :], 10, axis=1) 
         theft_prob = model.predict(sequence, verbose=0)[0][0]
 
-        # 8. Detection Logic
+        # 8. Optimized Detection Logic (Temporal Buffering)
         if theft_prob > 0.85:
             st.session_state.theft_counter += 1
         else:
@@ -158,33 +153,38 @@ if df is not None and not df.empty:
             st.success("✅ System Secure: Signature Verified")
 
     with col_graph:
-        st.subheader("🌊 AC Current Waveform (Live Trend)")
+        st.subheader("⚡ Live AC Current Sine Wave")
         
-        # Create a professional Waveform using Plotly
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df['Time'], 
-            y=df['Current'],
-            mode='lines+markers',
-            name='Current (A)',
-            line=dict(shape='spline', color='#10b981', width=3),
-            fill='tozeroy', 
-            fillcolor='rgba(16, 185, 129, 0.2)'
+        # --- GENERATE MATHEMATICAL SINE WAVE ---
+        # t = time in seconds (0.04s = 2 cycles at 50Hz)
+        t_sine = np.linspace(0, 0.04, 500)
+        # y = Amplitude * sin(2 * pi * frequency * t)
+        # We use the real-time frequency (f) and current (i) from sensor
+        actual_f = f if f > 40 else 50.0 
+        y_sine = i * np.sin(2 * np.pi * actual_f * t_sine)
+        
+        fig_sine = go.Figure()
+        fig_sine.add_trace(go.Scatter(
+            x=t_sine, y=y_sine,
+            mode='lines',
+            line=dict(color='#10b981', width=3),
+            fill='toself',
+            fillcolor='rgba(16, 185, 129, 0.1)'
         ))
 
-        fig.update_layout(
-            margin=dict(l=0, r=0, t=20, b=0),
+        fig_sine.update_layout(
             height=300,
-            xaxis_title="Time",
-            yaxis_title="Amperes (A)",
+            xaxis_title="Time (seconds)",
+            yaxis_title="Current (Amperes)",
             template="plotly_white",
-            hovermode="x unified"
+            yaxis=dict(range=[-max(i*1.5, 0.5), max(i*1.5, 0.5)]), # Dynamic scaling
+            margin=dict(l=0, r=0, t=20, b=0)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_sine, use_container_width=True)
 
-    # Secondary Power Graph
+    # Secondary History Graph
     st.divider()
-    st.subheader("📈 Real-Time Power Consumption (Watts)")
+    st.subheader("📈 Power Consumption History (Watts)")
     st.line_chart(df.set_index('Time')['Power'])
 
 # Auto-Refresh Logic

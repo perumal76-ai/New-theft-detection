@@ -106,7 +106,7 @@ if df is not None and not df.empty:
     col_ai, col_graph = st.columns([1, 2])
 
     with col_ai:
-        st.subheader("🕵️ Perumal AI Intelligence")
+        st.subheader("🕵️ AI Intelligence")
         
         # Pull metrics
         p = latest['Power']
@@ -190,3 +190,4 @@ if df is not None and not df.empty:
 # Auto-Refresh Logic
 time.sleep(refresh_rate)
 st.rerun()
+

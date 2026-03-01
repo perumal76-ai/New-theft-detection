@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Advanced Smart Grid Monitor", layout="wide")
 
 # Initialize Session State for Temporal Buffering
-# This ignores short power spikes (like laptop startup) by requiring 3 consecutive alerts
 if "theft_counter" not in st.session_state:
     st.session_state.theft_counter = 0
 
@@ -32,10 +31,9 @@ except KeyError:
     st.error("Missing Secrets: Please add TS_CHANNEL_ID and TS_READ_API_KEY in Streamlit Cloud Settings.")
     st.stop()
 
-# 3. Resource Loading (Model & Scaler)
+# 3. Resource Loading
 @st.cache_resource
 def load_assets():
-    # Ensure these files are in your GitHub root directory
     scaler = joblib.load('scaler.pkl')
     cnn_model = tf.keras.models.load_model('combined_model.keras')
     iso_model = joblib.load('iso_forest.pkl')
@@ -50,7 +48,6 @@ def fetch_live_data(results=60):
         response = requests.get(url, timeout=5).json()
         df = pd.DataFrame(response['feeds'])
         
-        # Map ThingSpeak fields to electrical parameters
         rename_map = {
             'field1': 'Voltage', 'field2': 'Current', 'field3': 'Power',
             'field4': 'Energy', 'field5': 'Frequency', 'field6': 'Power_Factor'
@@ -79,14 +76,12 @@ with st.sidebar:
     st.divider()
     st.info(f"Connected to Channel: {CHANNEL_ID}")
 
-# Execution Logic
 df = fetch_live_data()
 
 if df is not None and not df.empty:
     latest = df.iloc[-1]
     
     # 5. ESP32 Connection Heartbeat
-    # Checks if data was sent in the last 2 minutes
     last_update_time = latest['Time'].replace(tzinfo=None)
     is_online = (datetime.utcnow() - last_update_time) < timedelta(minutes=2)
     
@@ -106,29 +101,47 @@ if df is not None and not df.empty:
 
     st.divider()
 
-    # 7. AI Analysis & Device Intelligence
+    # 7. AI Analysis & Multi-Metric Device Intelligence
     col_ai, col_graph = st.columns([1, 2])
 
     with col_ai:
-        st.subheader("🕵️ Perumal AI Device Intelligence")
+        st.subheader("🕵️ Perumal AI Intelligence")
         
-        # Prepare data for AI model
-        raw_input = latest[['Voltage', 'Current', 'Power', 'Energy', 'Frequency', 'Power_Factor']].values.reshape(1, -1)
-        scaled_input = scaler.transform(raw_input)
-        
-        # Device Recognition Logic
+        # Pull latest metrics
         p = latest['Power']
-        if p < 5: active_device = "Standby Mode"
-        elif 5 <= p < 25: active_device = "Mobile Phone"
-        elif 25 <= p < 50: active_device = "40W Light"
-        elif 50 <= p < 120: active_device = "Laptop"
-        else: active_device = "Heavy Load / Multiple"
+        pf = latest['Power_Factor']
+        i = latest['Current']
+        
+        # --- NEW MULTI-METRIC DEVICE RECOGNITION LOGIC ---
+        # Derived from feeds_final.csv statistical patterns
+        if i < 0.05:
+            active_device = "Standby Mode"
+        # Purely Resistive Loads (Like your 40W Light)
+        elif pf > 0.95:
+            if 30 <= p < 45: active_device = "40W Light"
+            elif 45 <= p < 65: active_device = "Light + Phone"
+            else: active_device = "High Resistive Load"
+        # Electronic Switching Loads (Laptop / Phone)
+        elif pf < 0.70:
+            if p < 25: active_device = "Mobile Phone Charging"
+            elif 25 <= p < 60: active_device = "Laptop"
+            else: active_device = "Multiple Electronic Devices"
+        # Mixed Loads (Light + Electronics)
+        elif 0.70 <= pf <= 0.95:
+            if 70 <= p < 110: active_device = "Light + Laptop"
+            elif p >= 110: active_device = "Light + Phone + Laptop"
+            else: active_device = "Mixed Pattern Detected"
+        else:
+            active_device = "Unidentified Combination"
         
         st.write(f"**Identified Device:** {active_device}")
 
         # AI Prediction Execution
-        iso_status = iso_forest.predict(scaled_input)[0] # -1 = Anomaly
-        sequence = np.repeat(scaled_input[:, np.newaxis, :], 10, axis=1) # 10-step sequence
+        raw_input = latest[['Voltage', 'Current', 'Power', 'Energy', 'Frequency', 'Power_Factor']].values.reshape(1, -1)
+        scaled_input = scaler.transform(raw_input)
+        
+        iso_status = iso_forest.predict(scaled_input)[0] 
+        sequence = np.repeat(scaled_input[:, np.newaxis, :], 10, axis=1) 
         theft_prob = model.predict(sequence, verbose=0)[0][0]
 
         # 8. Optimized Detection Logic (Temporal Buffering)
@@ -140,11 +153,11 @@ if df is not None and not df.empty:
         # Output Results
         if st.session_state.theft_counter >= 3:
             st.error(f"🚨 CONFIRMED THEFT DETECTED ({theft_prob:.1%})")
-            st.warning("Constant anomalous load pattern detected. Check physical connections.")
+            st.warning("Continuous anomalous load signature confirmed.")
         elif theft_prob > 0.85:
             st.info(f"🟡 Analyzing Pattern... ({st.session_state.theft_counter}/3)")
         elif iso_status == -1:
-            st.warning("⚠️ Unknown Device Signature Detected")
+            st.warning("⚠️ Unknown Signature (Anomaly Found)")
         else:
             st.success("✅ System Secure: Signature Verified")
 
@@ -155,4 +168,3 @@ if df is not None and not df.empty:
 # Auto-Refresh Logic
 time.sleep(refresh_rate)
 st.rerun()
-
